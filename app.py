@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import pickle
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-import os
 
 # Memuat model dan scaler yang telah disimpan
 @st.cache_resource
