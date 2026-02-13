@@ -3,7 +3,7 @@ import pandas as pd
 import pickle
 import numpy as np
 
-# Memuat model dan scaler yang telah disimpan
+# Memuat model dan scaler
 @st.cache_resource
 def load_resources():
     try:
@@ -13,20 +13,18 @@ def load_resources():
             loaded_scaler = pickle.load(file)
         return loaded_model, loaded_scaler
     except FileNotFoundError:
-        st.error("Error: Model or scaler file not found. Make sure 'bayesian_ridge_model.pkl' and 'standard_scaler.pkl' are in the same directory as this script.")
-        st.stop()
-    except Exception as e:
-        st.error(f"Error loading resources: {e}")
+        st.error("Error: File model atau scaler tidak ditemukan.")
         st.stop()
 
 loaded_model, loaded_scaler = load_resources()
 
-# Pemetaan jenis kelamin (harus sesuai dengan saat training)
-mapping_gender = {'Pria': 'Laki-laki', 'L': 'Laki-laki', 'Perempuan': 'Wanita', 'P': 'Wanita', 'wanita': 'Wanita', 'Laki-Laki': 'Laki-laki'}
-
-# Daftar kolom fitur yang digunakan saat training (sesuai dengan X_train/X_test)
-# Ini penting untuk memastikan urutan dan keberadaan kolom saat prediksi
-feature_cols = ['Usia', 'Durasi_Jam', 'Nilai_Ujian', 'Jenis_Kelamin_Laki-laki', 'Jenis_Kelamin_Wanita', 'Status_Bekerja_Belum Bekerja', 'Status_Bekerja_Sudah Bekerja']
+# 1. TAMBAHKAN kolom Jurusan di feature_cols (Sesuaikan nama kolom dengan saat training)
+feature_cols = [
+    'Usia', 'Durasi_Jam', 'Nilai_Ujian', 
+    'Jenis_Kelamin_Laki-laki', 'Jenis_Kelamin_Wanita', 
+    'Status_Bekerja_Belum Bekerja', 'Status_Bekerja_Sudah Bekerja',
+    'Jurusan_Teknik', 'Jurusan_IT', 'Jurusan_Bisnis', 'Jurusan_Kesehatan', 'Jurusan_Seni' # Contoh nama kolom jurusan
+]
 
 st.set_page_config(page_title="Prediksi Gaji Awal Lulusan Vokasi")
 st.title("💰 Prediksi Gaji Awal Lulusan Pelatihan Vokasi")
@@ -41,61 +39,57 @@ nilai_ujian = st.slider("Nilai Ujian", 50.0, 100.0, 75.0)
 jenis_kelamin_raw = st.selectbox("Jenis Kelamin", ['Laki-laki', 'Wanita'])
 status_bekerja_raw = st.selectbox("Status Bekerja", ['Sudah Bekerja', 'Belum Bekerja'])
 
+# 2. TAMBAHKAN Input Jurusan
+jurusan_raw = st.selectbox("Jurusan", ['Teknik', 'IT', 'Bisnis', 'Kesehatan', 'Seni'])
+
 if st.button("Prediksi Gaji"):
-    # Membuat DataFrame dari input pengguna
+    # Membuat DataFrame awal
     input_data = {
         'Usia': usia,
         'Durasi_Jam': durasi_jam,
         'Nilai_Ujian': nilai_ujian,
         'Jenis_Kelamin': jenis_kelamin_raw,
-        'Status_Bekerja': status_bekerja_raw
+        'Status_Bekerja': status_bekerja_raw,
+        'Jurusan': jurusan_raw
     }
     new_df = pd.DataFrame([input_data])
 
-    # Pra-pemrosesan data input baru (mereplikasi langkah-langkah training)
+    # 3. PROSES ONE-HOT ENCODING MANUAL
+    # Buat DataFrame kosong dengan SEMUA kolom fitur bernilai 0
+    df_encoded = pd.DataFrame(0, index=new_df.index, columns=feature_cols)
 
-    # 1. Terapkan pemetaan jenis kelamin
-    new_df['Jenis_Kelamin'] = new_df['Jenis_Kelamin'].replace(mapping_gender)
+    # Isi nilai numerik dasar
+    df_encoded['Usia'] = usia
+    df_encoded['Durasi_Jam'] = durasi_jam
+    df_encoded['Nilai_Ujian'] = nilai_ujian
 
-    # 2. One-Hot Encode fitur kategorikal
-    # Buat DataFrame kosong dengan semua kolom one-hot yang mungkin, inisialisasi dengan 0
-    df_encoded = pd.DataFrame(0, index=new_df.index, columns=[
-        'Jenis_Kelamin_Laki-laki', 'Jenis_Kelamin_Wanita',
-        'Status_Bekerja_Belum Bekerja', 'Status_Bekerja_Sudah Bekerja'
-    ])
-
-    # Set nilai 1 untuk kategori yang dipilih
-    if new_df['Jenis_Kelamin'].iloc[0] == 'Laki-laki':
+    # Set nilai 1 untuk Jenis Kelamin
+    if jenis_kelamin_raw == 'Laki-laki':
         df_encoded['Jenis_Kelamin_Laki-laki'] = 1
-    elif new_df['Jenis_Kelamin'].iloc[0] == 'Wanita':
+    else:
         df_encoded['Jenis_Kelamin_Wanita'] = 1
 
-    if new_df['Status_Bekerja'].iloc[0] == 'Sudah Bekerja':
+    # Set nilai 1 untuk Status Bekerja
+    if status_bekerja_raw == 'Sudah Bekerja':
         df_encoded['Status_Bekerja_Sudah Bekerja'] = 1
-    elif new_df['Status_Bekerja'].iloc[0] == 'Belum Bekerja':
+    else:
         df_encoded['Status_Bekerja_Belum Bekerja'] = 1
 
-    # Gabungkan kolom numerik dengan one-hot encoded
-    new_df_processed = pd.concat([
-        new_df[['Usia', 'Durasi_Jam', 'Nilai_Ujian']],
-        df_encoded
-    ], axis=1)
+    # Set nilai 1 untuk Jurusan (Sesuai pilihan user)
+    # Pastikan string 'Jurusan_' + jurusan_raw cocok dengan nama kolom di feature_cols
+    kolom_jurusan_pilihan = f"Jurusan_{jurusan_raw}"
+    if kolom_jurusan_pilihan in df_encoded.columns:
+        df_encoded[kolom_jurusan_pilihan] = 1
 
-    # Pastikan urutan kolom sesuai dengan feature_cols yang digunakan saat training
-    new_df_processed = new_df_processed[feature_cols]
-
-    # 3. Scaling fitur menggunakan scaler yang dimuat
-    # Penting: Scaler diterapkan pada SEMUA feature_cols saat training, jadi replikasi di sini
-    scaled_new_data = loaded_scaler.transform(new_df_processed)
-
-    # Konversi kembali ke DataFrame untuk prediksi
-    scaled_new_df = pd.DataFrame(scaled_new_data, columns=feature_cols)
-
-    # Lakukan prediksi
-    predicted_salary = loaded_model.predict(scaled_new_df)
+    # 4. SCALING DAN PREDIKSI
+    # Pastikan urutan kolom di df_encoded sama persis dengan feature_cols
+    df_final = df_encoded[feature_cols]
+    
+    scaled_new_data = loaded_scaler.transform(df_final)
+    predicted_salary = loaded_model.predict(scaled_new_data)
 
     st.subheader("Hasil Prediksi:")
     st.success(f"Prediksi Gaji Awal Anda: **{predicted_salary[0]:.2f} Juta Rupiah**")
 
 st.markdown("--- ")
-st.info("Aplikasi ini menggunakan model Bayesian Ridge Regression untuk memprediksi gaji awal berdasarkan input yang diberikan.")
+st.info("Catatan: Pastikan nama kolom jurusan di kode ini sama dengan nama kolom saat Anda melakukan training model.")
